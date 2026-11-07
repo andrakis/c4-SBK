@@ -11,7 +11,9 @@
 #include <math.h>
 #include "sbk.h"
 
-// the course: what to do, and for how long or until what
+// the course: what to do, and for how long or until what. It lets go of A
+// before it pauses: letting go in the same update as Esc would choose the pause
+// menu's Continue at once, on upstream's game as here.
 enum { S_WAIT, S_TAP, S_DOWN_TAP, S_DRIVE_FINISH, S_DRIVE_TIME, S_WAIT_END, S_PAUSE_TAP, S_ITEM_DRIVE, S_DONE };
 typedef struct Step { int kind, a; } Step;
 
@@ -29,7 +31,7 @@ static Step course[] = {
 	// track select: look at both, back to rainbow, and go
 	{ S_TAP, BTN_DOWN }, { S_WAIT, 120 }, { S_TAP, BTN_DOWN }, { S_WAIT, 60 }, { S_TAP, BTN_A }, { S_WAIT, 120 },
 	// a race on rainbow: pause and go on, three laps with the items it finds, to the end
-	{ S_ITEM_DRIVE, 700 }, { S_PAUSE_TAP, 0 }, { S_WAIT, 60 }, { S_TAP, BTN_A }, { S_DRIVE_FINISH, 0 },
+	{ S_ITEM_DRIVE, 700 }, { S_WAIT, 10 }, { S_PAUSE_TAP, 0 }, { S_WAIT, 60 }, { S_TAP, BTN_A }, { S_WAIT, 10 }, { S_DRIVE_FINISH, 0 },
 	{ S_WAIT_END, 0 }, { S_WAIT, 50 },
 	// Quit: the result is saved
 	{ S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_A }, { S_WAIT, 60 },
@@ -44,23 +46,23 @@ static Step course[] = {
 	{ S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_A }, { S_WAIT, 40 }, { S_TAP, BTN_A }, { S_WAIT, 100 },
 	{ S_TAP, BTN_A }, { S_WAIT, 40 },
 	{ S_DRIVE_TIME, 1200 },
-	{ S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_A }, { S_WAIT, 40 },
+	{ S_WAIT, 10 }, { S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_A }, { S_WAIT, 40 },
 	{ S_DRIVE_TIME, 500 },
-	{ S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 },
+	{ S_WAIT, 10 }, { S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 },
 	{ S_TAP, BTN_A }, { S_WAIT, 60 },
 
 	// a race on the desert, for a while: boost strips, cacti, walls, items; pause, quit
 	{ S_TAP, BTN_A }, { S_WAIT, 40 }, { S_TAP, BTN_A }, { S_WAIT, 60 },
 	{ S_TAP, BTN_DOWN }, { S_WAIT, 150 }, { S_TAP, BTN_A }, { S_WAIT, 120 },
 	{ S_ITEM_DRIVE, 3000 }, { S_DRIVE_TIME, 1500 },
-	{ S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 },
+	{ S_WAIT, 10 }, { S_PAUSE_TAP, 0 }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 }, { S_TAP, BTN_DOWN }, { S_WAIT, 30 },
 	{ S_TAP, BTN_A }, { S_WAIT, 60 },
 	{ S_DONE, 0 }
 };
 
 static int at, timer, phase;
 static int run_count, run_mask = -1;
-static int total;
+static int total, count;
 
 static FILE *out;
 
@@ -126,7 +128,10 @@ static int steer(int use_items) {
 // the buttons for the next update, or -1: the course is over
 int record_buttons(void) {
 	Step *s;
-	int mask;
+	if (++count > 100000) {
+		fprintf(stderr, "sbk: the course is stuck at step %d", at);
+		return -1;
+	}
 	while (1) {
 		s = course + at;
 		switch (s->kind) {

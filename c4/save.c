@@ -1,6 +1,6 @@
 // save.c -- blit::read_save and write_save: a file in the current directory for
-// each slot, named so that C4DOS can hold it too. A disk that cannot take one
-// costs the save, not the race.
+// each slot, named so that C4DOS could hold it too. A disk that can't take one
+// costs the save when the game ends (src/game.c keeps them till then), not the race.
 
 #include <stdio.h>
 #include "plat.h"

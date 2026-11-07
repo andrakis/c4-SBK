@@ -39,7 +39,6 @@ static struct {
 static GameState race_game_state;
 
 static int mm_palette[4];
-static Surf mm_surf;
 static int num_font_pen[2];
 
 RaceState *race_state_now(void) { return &r.state; }
@@ -184,13 +183,13 @@ static void setup_race(void) {
 	// Track::get_starting_dir
 	dirx = info->segs[0].rx;
 	diry = info->segs[0].ry;
-	d = sqrtf(dirx * dirx + diry * diry);
+	d = sbk_sqrtf(dirx * dirx + diry * diry);
 	dirx = dirx / d;
 	diry = diry / d;
 
 	flx = (float) (info->fin[2] - info->fin[0]);
 	fly = (float) (info->fin[3] - info->fin[1]);
-	w = sqrtf(flx * flx + fly * fly);
+	w = sbk_sqrtf(flx * flx + fly * fly);
 	flx = flx / w;
 	fly = fly / w;
 
@@ -424,7 +423,6 @@ static void race_render(void) {
 	char place_char[2];
 	Kart *k0;
 	Track *trk;
-	TrackObject *ob;
 	int i, num, place, bw, bh, col, cr, cg, cb, lap, cur, ix, iy, item, cx, cy, off_x, off_y, oldx, oldy, oldw, oldh, sx, mx, my;
 	float scale;
 	unsigned c0, c1;
@@ -434,7 +432,7 @@ static void race_render(void) {
 	c0 = sbk_perf ? plat_cycles() : 0;
 	build_lists();
 	mm_build();
-	if (sbk_perf) { c1 = plat_cycles(); pf->frames++; pf->lists += c1 - c0; c0 = c1; }
+	if (sbk_perf) { c1 = plat_cycles(); pf->frames++; pf->lists += (c1 - c0) >> 8; c0 = c1; }
 
 	trk = r.state.track;
 	k0 = r.state.karts;
@@ -442,14 +440,26 @@ static void race_render(void) {
 	scr_pen = trk->info->bg;
 	scr_clear();
 
+	drawn_y0 = SCREEN_H;
+	drawn_y1 = -1;
 	for (i = 0; i < r.nbelow; i++) sprite_render(r.below[i], &r.cam);
 
-	if (sbk_perf) { c1 = plat_cycles(); pf->sprites += c1 - c0; c0 = c1; }
-	track_render(trk, &r.cam, r.nbelow == 0);
-	if (sbk_perf) { c1 = plat_cycles(); pf->mode7 += c1 - c0; c0 = c1; }
+	if (sbk_perf) { c1 = plat_cycles(); pf->sprites += (c1 - c0) >> 8; c0 = c1; }
+	track_render(trk, &r.cam, drawn_y0, drawn_y1);
+	if (sbk_perf) {
+		c1 = plat_cycles();
+		pf->mode7 += (c1 - c0) >> 8;
+		if (c1 - c0 > pf->max_mode7) pf->max_mode7 = c1 - c0;
+		c0 = c1;
+	}
 
 	for (i = 0; i < r.nlist; i++) sprite_render(r.list[i], &r.cam);
-	if (sbk_perf) { c1 = plat_cycles(); pf->sprites += c1 - c0; c0 = c1; }
+	if (sbk_perf) {
+		c1 = plat_cycles();
+		pf->sprites += (c1 - c0) >> 8;
+		if (c1 - c0 > pf->max_sprites) pf->max_sprites = c1 - c0;
+		c0 = c1;
+	}
 
 	scr_pen = RGB(255, 255, 255);
 
@@ -519,7 +529,8 @@ static void race_render(void) {
 	}
 
 	// minimap
-	scr_blit(&mm_surf, 0, 0, MM_SIZE, MM_SIZE, SCREEN_W - MM_SIZE, SCREEN_H - MM_SIZE);
+	// (its pens' alpha of 128 at the screen's 255 is 129; before any update, all index 0)
+	scr_blit_tinted(r.mm_data, MM_SIZE, MM_SIZE, SCREEN_W - MM_SIZE, SCREEN_H - MM_SIZE, mm_palette, 129);
 
 	// kart locations on minimap
 	mx = SCREEN_W - r.mm_w;
@@ -546,7 +557,11 @@ static void race_render(void) {
 		scr_clear();
 		menu_render(&r.pause_menu);
 	}
-	if (sbk_perf) pf->hud += plat_cycles() - c0;
+	if (sbk_perf) {
+		c1 = plat_cycles();
+		pf->hud += (c1 - c0) >> 8;
+		if (c1 - c0 > pf->max_hud) pf->max_hud = c1 - c0;
+	}
 }
 
 // ---- Race::update ----
@@ -557,7 +572,7 @@ static void race_update(unsigned time) {
 	int kart_idx[NUM_KARTS];
 	float progress[NUM_KARTS];
 	unsigned ftime;
-	float p, z, tx, ty, tz, px, py, pz, lx, ly, lz;
+	float p, tx, ty, tz, px, py, pz, lx, ly, lz;
 	int i, j, new_num_finished, route_len;
 	unsigned c0;
 
@@ -626,7 +641,7 @@ static void race_update(unsigned time) {
 				else if (py >= rect->fy2) oy = rect->fy2;
 				vx = px - ox;
 				vy = py - oy;
-				dist = sqrtf(vx * vx + vy * vy);
+				dist = sbk_sqrtf(vx * vx + vy * vy);
 				if (dist > radius) continue;
 				vx = vx / dist;
 				vy = vy / dist;
@@ -640,6 +655,7 @@ static void race_update(unsigned time) {
 				ob->vel.y = ob->vel.y - 0.0f * dot * 2.0f;
 				ob->vel.z = ob->vel.z - vy * dot * 2.0f;
 			}
+			obj_moved(ob);
 		}
 	}
 
@@ -713,8 +729,10 @@ static void race_update(unsigned time) {
 	mm_update((int) (tx / 8.0f), (int) (tz / 8.0f));
 
 	if (sbk_perf) {
+		c0 = plat_cycles() - c0;
 		perf_race[r.track_index].updates++;
-		perf_race[r.track_index].update += plat_cycles() - c0;
+		perf_race[r.track_index].update += c0 >> 8;
+		if (c0 > perf_race[r.track_index].max_update) perf_race[r.track_index].max_update = c0;
 	}
 }
 
@@ -744,10 +762,6 @@ GameState *race_new(int player_kart, int track_index, int mode) {
 
 	r.mm_data = (unsigned char *) malloc(MM_SIZE * MM_SIZE);
 	memset(r.mm_data, 0, MM_SIZE * MM_SIZE);
-	mm_surf.data = r.mm_data;
-	mm_surf.w = MM_SIZE;
-	mm_surf.h = MM_SIZE;
-	mm_surf.pal = mm_palette;
 	mm_palette[0] = PEN(0, 0, 0, 0);
 	mm_palette[1] = PEN(0, 0, 0, 128);
 	mm_palette[2] = PEN(128, 128, 128, 128);

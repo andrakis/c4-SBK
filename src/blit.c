@@ -12,6 +12,7 @@
 int *fb;
 int clip_x, clip_y, clip_w, clip_h;
 int scr_alpha, scr_pen;
+int drawn_y0, drawn_y1;
 
 void scr_init(void) {
 	fb = (int *) malloc(SCREEN_W * SCREEN_H * 4);
@@ -27,7 +28,7 @@ int pen_alpha(int a1, int a2) { return ((a1 + 1) * (a2 + 1)) >> 8; }
 
 // RGBA_RGB(const Pen *, ...): c of the pen
 void pen_span(int pen, int off, int c) {
-	int a, v, sr, sg, sb, dr, dg, db;
+	int a, v, n, sr, sg, sb, dr, dg, db, was, out;
 	int *d;
 	a = (pen >> 24) & 255;
 	if (!a) return;
@@ -35,32 +36,57 @@ void pen_span(int pen, int off, int c) {
 	d = fb + off;
 	if (a >= 255) {
 		v = pen & 0xFFFFFF;
+		// memcpy is one of the VM's opcodes, as cheap for a screen as for a word:
+		// a lot of pixels are some done by hand, then what is done, doubled
+		if (c >= 64) {
+			n = 16;
+			for (a = 0; a < n; a++) d[a] = v;
+			c -= n;
+			while (c > 0) {
+				a = n < c ? n : c;
+				memcpy((char *) (d + n), (char *) d, a * 4);
+				n += a;
+				c -= a;
+			}
+			return;
+		}
 		while (c-- > 0) *d++ = v;
 		return;
 	}
 	sr = (pen >> 16) & 255;
 	sg = (pen >> 8) & 255;
 	sb = pen & 255;
+	// what is under it is often the colour just done
+	was = -1;
+	out = 0;
 	while (c-- > 0) {
 		v = *d;
-		dr = (v >> 16) & 255;
-		dg = (v >> 8) & 255;
-		db = v & 255;
-		*d++ = ((dr + ((a * (sr - dr) + 127) >> 8)) << 16) |
-		       ((dg + ((a * (sg - dg) + 127) >> 8)) << 8) |
-		       (db + ((a * (sb - db) + 127) >> 8));
+		if (v != was) {
+			was = v;
+			dr = (v >> 16) & 255;
+			dg = (v >> 8) & 255;
+			db = v & 255;
+			out = ((dr + ((a * (sr - dr) + 127) >> 8)) << 16) |
+			      ((dg + ((a * (sg - dg) + 127) >> 8)) << 8) |
+			      (db + ((a * (sb - db) + 127) >> 8));
+		}
+		*d++ = out;
 	}
 }
 
-// RGBA_RGB(const Surface *, ...): a row of the source
+// RGBA_RGB(const Surface *, ...): a row of the source. The same colours over the
+// same colours come out the same, and in a row they often are.
 static void row_blit(Surf *src, int soff, int doff, int cnt) {
 	unsigned char *s;
 	int *pal, *d;
-	int p, a, v, dr, dg, db, alpha;
+	int p, a, v, dr, dg, db, alpha, was_p, was_v, out;
 	s = src->data + soff;
 	pal = src->pal;
 	d = fb + doff;
 	alpha = scr_alpha + 1;
+	was_p = 0;
+	was_v = -1;
+	out = 0;
 	do {
 		p = pal[*s++];
 		a = (((p >> 24) & 255) + 1) * alpha >> 8;
@@ -68,15 +94,55 @@ static void row_blit(Surf *src, int soff, int doff, int cnt) {
 			*d = p & 0xFFFFFF;
 		} else if (a > 1) {
 			v = *d;
-			dr = (v >> 16) & 255;
-			dg = (v >> 8) & 255;
-			db = v & 255;
-			*d = ((dr + ((a * (((p >> 16) & 255) - dr) + 127) >> 8)) << 16) |
-			     ((dg + ((a * (((p >> 8) & 255) - dg) + 127) >> 8)) << 8) |
-			     (db + ((a * ((p & 255) - db) + 127) >> 8));
+			if (v != was_v || p != was_p) {
+				was_v = v;
+				was_p = p;
+				dr = (v >> 16) & 255;
+				dg = (v >> 8) & 255;
+				db = v & 255;
+				out = ((dr + ((a * (((p >> 16) & 255) - dr) + 127) >> 8)) << 16) |
+				      ((dg + ((a * (((p >> 8) & 255) - dg) + 127) >> 8)) << 8) |
+				      (db + ((a * ((p & 255) - db) + 127) >> 8));
+			}
+			*d = out;
 		}
 		d++;
 	} while (--cnt);
+}
+
+// the minimap: a blit of row_blit's, of a few pens at the same alpha (and with
+// the screen's alpha at 255, which it is then), where index 0 draws nothing
+void scr_blit_tinted(unsigned char *src, int w, int h, int x0, int y0, int *rgb, int a) {
+	int *d;
+	int x, y, c, v, was, wc, out, p, dr, dg, db;
+	unsigned char *s;
+	s = src;
+	for (y = 0; y < h; y++) {
+		d = fb + x0 + (y0 + y) * SCREEN_W;
+		was = -1;
+		wc = 0;
+		out = 0;
+		x = w;
+		do {
+			c = *s++;
+			if (c) {
+				v = *d;
+				if (v != was || c != wc) {
+					was = v;
+					wc = c;
+					p = rgb[c];
+					dr = (v >> 16) & 255;
+					dg = (v >> 8) & 255;
+					db = v & 255;
+					out = ((dr + ((a * (((p >> 16) & 255) - dr) + 127) >> 8)) << 16) |
+					      ((dg + ((a * (((p >> 8) & 255) - dg) + 127) >> 8)) << 8) |
+					      (db + ((a * ((p & 255) - db) + 127) >> 8));
+				}
+				*d = out;
+			}
+			d++;
+		} while (--x);
+	}
 }
 
 // Surface::clear, rectangle
@@ -203,17 +269,23 @@ void scr_sprite(Surf *src, int sx, int sy, int sw, int sh, int px, int py) {
 	} while (--count);
 }
 
+static int run_x[SCREEN_W], run_n[SCREEN_W];
+static int vis_pen[SCREEN_W], vis_opaque[SCREEN_W], vis_off[SCREEN_W], vis_n[SCREEN_W];
+
 // Surface::stretch_blit(src, sprite, r, t), for no flip or a flip across
 void scr_stretch(Surf *src, int sx, int sy, int sw, int sh, int rx, int ry, int rw, int rh, int t) {
-	int dx, dy, dw, dh, scale_x, scale_y, left, top, x_step, y_step, doff, soff, y_count, y, x_scale_px;
-	int x_count, x, num, new_x, sw2;
-	unsigned char *data;
-	int *pal;
+	int dx, dy, dw, dh, scale_x, scale_y, left, top, x_step, y_step, doff, y_count, y, x_scale_px;
+	int x_count, x, num, new_x, sw2, alpha1, p, a, v, c, dr, dg, db, k, j, last, vis, off, src_y;
+	int *base;
+	unsigned char *data, *row;
+	int *pal, *d;
 	dx = clip_x > rx ? clip_x : rx;
 	dy = clip_y > ry ? clip_y : ry;
 	dw = (clip_x + clip_w < rx + rw ? clip_x + clip_w : rx + rw) - dx;
 	dh = (clip_y + clip_h < ry + rh ? clip_y + clip_h : ry + rh) - dy;
 	if (dw <= 0 || dh <= 0) return;
+	if (dy < drawn_y0) drawn_y0 = dy;
+	if (dy + dh - 1 > drawn_y1) drawn_y1 = dy + dh - 1;
 	scale_x = (sw << 16) / rw;
 	scale_y = (sh << 16) / rh;
 	left = (dx - rx) * scale_x;
@@ -235,24 +307,97 @@ void scr_stretch(Surf *src, int sx, int sy, int sw, int sh, int rx, int ry, int 
 	data = src->data;
 	pal = src->pal;
 	sw2 = src->w;
-	do {
-		x_count = dw;
-		x = left;
-		soff = sx + (sy + (y >> 16)) * sw2;
-		num = (x & 65535) == 0 ? x_scale_px : 1;
+	alpha1 = scr_alpha + 1;
+	if (x_scale_px == 1) {
+		// no wider than the source: whatever else upstream's loop does, each
+		// pixel is the source pixel under it
 		do {
-			new_x = x + x_step * num;
-			if (x >> 16 == new_x >> 16 && x_count > num) {
-				num++;
-				new_x += x_step;
+			row = data + sx + (sy + (y >> 16)) * sw2;
+			x = left;
+			d = fb + doff;
+			x_count = dw;
+			do {
+				p = pal[row[x >> 16]];
+				x += x_step;
+				if (p >> 24) {
+					a = (((p >> 24) & 255) + 1) * alpha1 >> 8;
+					if (a >= 255) *d = p & 0xFFFFFF;
+					else {
+						v = *d;
+						dr = (v >> 16) & 255;
+						dg = (v >> 8) & 255;
+						db = v & 255;
+						*d = ((dr + ((a * (((p >> 16) & 255) - dr) + 127) >> 8)) << 16) |
+						     ((dg + ((a * (((p >> 8) & 255) - dg) + 127) >> 8)) << 8) |
+						     (db + ((a * ((p & 255) - db) + 127) >> 8));
+					}
+				}
+				d++;
+			} while (--x_count);
+			doff += SCREEN_W;
+			y += y_step;
+		} while (--y_count);
+		return;
+	}
+	// wider than the source: every row steps through its source the same way, so
+	// upstream's stepping is worked out once, into a table
+	k = 0;
+	x_count = dw;
+	x = left;
+	num = (x & 65535) == 0 ? x_scale_px : 1;
+	do {
+		new_x = x + x_step * num;
+		if (x >> 16 == new_x >> 16 && x_count > num) {
+			num++;
+			new_x += x_step;
+		}
+		run_x[k] = x >> 16;
+		run_n[k] = num;
+		k++;
+		x = new_x;
+		x_count -= num;
+		num = x_count < x_scale_px ? x_count : x_scale_px;
+	} while (x_count);
+	// and many rows show the same row of the source, mostly nothing: its visible runs
+	// are worked out when it changes, and the rows that show it draw only those
+	last = -1;
+	vis = 0;
+	do {
+		src_y = sy + (y >> 16);
+		if (src_y != last) {
+			last = src_y;
+			row = data + sx + src_y * sw2;
+			vis = 0;
+			off = 0;
+			for (j = 0; j < k; j++) {
+				p = pal[row[run_x[j]]];
+				if (p >> 24) {
+					a = (((p >> 24) & 255) + 1) * alpha1 >> 8;
+					vis_pen[vis] = a >= 255 ? p & 0xFFFFFF : p;
+					vis_opaque[vis] = a >= 255;
+					vis_off[vis] = off;
+					vis_n[vis] = run_n[j];
+					vis++;
+				}
+				off += run_n[j];
 			}
-			pen_span(pal[data[soff + (x >> 16)]], doff, num);
-			doff += num;
-			x = new_x;
-			x_count -= num;
-			num = x_count < x_scale_px ? x_count : x_scale_px;
-		} while (x_count);
-		doff += SCREEN_W - dw;
+		}
+		base = fb + doff;
+		for (j = 0; j < vis; j++) {
+			d = base + vis_off[j];
+			if (vis_opaque[j]) {
+				v = vis_pen[j];
+				c = vis_n[j];
+				while (c >= 4) {
+					d[0] = v; d[1] = v; d[2] = v; d[3] = v;
+					d += 4;
+					c -= 4;
+				}
+				while (c) { *d++ = v; c--; }
+			} else
+				pen_span(vis_pen[j], doff + vis_off[j], vis_n[j]);
+		}
+		doff += SCREEN_W;
 		y += y_step;
 	} while (--y_count);
 }
@@ -260,10 +405,10 @@ void scr_stretch(Surf *src, int sx, int sy, int sw, int sh, int rx, int ry, int 
 // Surface::sprite(rect, position, origin, scale, transform)
 void scr_sprite_scaled(Surf *src, int sx, int sy, int sw, int sh, int px, int py, int ox, int oy, float scale, int t) {
 	int rx, ry, rw, rh;
-	rx = (int) roundf((float) px - (float) ox * scale);
-	ry = (int) roundf((float) py - (float) oy * scale);
-	rw = (int) roundf((float) sw * 8.0f * scale);
-	rh = (int) roundf((float) sh * 8.0f * scale);
+	rx = (int) sbk_roundf((float) px - (float) ox * scale);
+	ry = (int) sbk_roundf((float) py - (float) oy * scale);
+	rw = (int) sbk_roundf((float) sw * 8.0f * scale);
+	rh = (int) sbk_roundf((float) sh * 8.0f * scale);
 	scr_stretch(src, sx * 8, sy * 8, sw * 8, sh * 8, rx, ry, rw, rh, t);
 }
 
@@ -284,7 +429,9 @@ int measure_h(Font *f) { return f->char_h + f->spacing; }
 void scr_text(char *s, Font *f, int rx, int ry, int rw, int rh, int align) {
 	int cx, cy, hb, size, c, y, x, po, xx, yy, bit, ch, cw;
 	unsigned char *g;
-	unsigned char *row;
+	int plain, ink;
+	plain = pen_alpha((scr_pen >> 24) & 255, scr_alpha) >= 255;
+	ink = scr_pen & 0xFFFFFF;
 	if (clip_x > rx + rw || clip_x + clip_w < rx || clip_y > ry + rh || clip_y + clip_h < ry) return;
 	cx = rx;
 	cy = ry;
@@ -301,19 +448,22 @@ void scr_text(char *s, Font *f, int rx, int ry, int rw, int rh, int align) {
 		c = *s++ & 0x7F;
 		c = c < 32 ? 0 : c - 32;
 		g = f->data + c * size;
-		for (y = 0; y < ch; y++) {
-			yy = cy + y;
-			if (yy < 0) continue;
-			row = g + y / 8;
-			bit = 1 << (y & 7);
-			po = cx + yy * SCREEN_W;
-			for (x = 0; x < cw; x++) {
-				if (row[x * hb] & bit) {
-					xx = cx + x;
-					if (xx >= clip_x && yy >= clip_y && xx < clip_x + clip_w && yy < clip_y + clip_h)
-						pen_span(scr_pen, po, 1);
+		// down each column, as the font is held, where a byte of no ink is one look
+		for (x = 0; x < cw; x++) {
+			xx = cx + x;
+			if (xx < clip_x || xx >= clip_x + clip_w) { g += hb; continue; }
+			for (y = 0; y < ch; y += 8) {
+				bit = *g++;
+				if (!bit) continue;
+				for (po = 0; po < 8; po++) {
+					if (bit & (1 << po)) {
+						yy = cy + y + po;
+						if (yy >= 0 && yy >= clip_y && yy < clip_y + clip_h) {
+							if (plain) fb[xx + yy * SCREEN_W] = ink;
+							else pen_span(scr_pen, xx + yy * SCREEN_W, 1);
+						}
+					}
 				}
-				po++;
 			}
 		}
 		cx += f->widths[c];

@@ -10,14 +10,14 @@
 # into .sbk/gen/sbk-assets.c, which is linked in. With no art there is nothing
 # to link: no objects, no game on any disk, and test-sbk says it was skipped.
 SBK        := games/sbk
-SBK_UNITS  := game blit assets sprite3d track kart menu states race
+SBK_UNITS  := game blit assets sprite3d track kart menu states race sbkmath
 SBK_C4     := video save demo
 SBK_HDRS   := $(wildcard $(SBK)/src/*.h $(SBK)/c4/*.h) \
               $(wildcard src/c4ix/libc/include/*.h src/c4ix/libc/include/sys/*.h) \
               src/c4ix/include/display.h src/c4ix/include/window.h src/c4ix/include/window.c \
               libjs/guest/gui.h libjs/guest/gui.c
 SBK_CC     := ./c4sp32 -c 400000 src/c4sp/lisp/c4lc.lisp -O $(IMG_G) -mfuse -fno-builtin -c -conforming \
-              -D C4SBK -I $(SBK)/c4 -I $(SBK)/src -I src/c4ix/libc/include -I src/c4ix/include -I libjs/guest
+              -D C4SBK -D SBK_C4 -I $(SBK)/c4 -I $(SBK)/src -I src/c4ix/libc/include -I src/c4ix/include -I libjs/guest
 SBK_GEN    := .sbk/gen
 
 # the art: each file, from upstream's commit, checked by SHA-256
@@ -96,7 +96,8 @@ PHONY += sbk-host sbk-record
 # test-sbk: the demo (c4/demo.c), one stream of buttons on a clock of its own,
 # with a fixed seed, built by gcc and by c4lc -- on the bare machine, under C4DOS
 # and inside C4IX -- must draw the same frames: a line for each, with a checksum
-# of its pixels. The C4DOS and C4IX runs must also end and give the machine back.
+# of its pixels. The C4DOS and C4IX runs must also end and give the machine back,
+# and a save written to C4IX's disk must come back (-demo's are in memory).
 test-sbk: c4bb-images
 	@if [ ! -f $(SBK)/data/kart.png ] || [ ! -f src/c4bb/images/games/sbk.c4r ]; then \
 	   echo "test-sbk: skipped, no art (games/sbk/data/README.md)"; exit 0; fi; \
@@ -106,14 +107,16 @@ test-sbk: c4bb-images
 	 ( cd src/c4bb/images/games && timeout 1800 node ../../../../libjs/cli.js -m 64 -d . sbk.c4r -demo 2>/dev/null ) > .sbk_t/bare.out; \
 	 { echo "sbk -demo"; echo ver; } | \
 	   ( cd src/c4bb/images/games && timeout 1800 node ../../../../libjs/cli.js -m 64 -d . ../c4dos32.c4r 2>/dev/null ) > .sbk_t/dos.out; \
-	 { echo "sbk -demo"; echo exit; } | \
+	 { echo "sbk -demo"; echo "cd /tmp"; echo "sbk -savetest"; echo exit; } | \
 	   timeout 1800 node libjs/cli.js -m 64 -d src/c4bb/images/disk src/c4bb/images/c4ix32.c4r 2>/dev/null > .sbk_t/c4ix.out; \
-	 for w in bare dos c4ix; do sed -e 's/^A:.>//' .sbk_t/$$w.out | grep '^sbk ' > .sbk_t/$$w.txt; \
+	 for w in bare dos c4ix; do sed -e 's/^A:.>//' .sbk_t/$$w.out | grep '^sbk [0-9e]' > .sbk_t/$$w.txt; \
 	   cmp -s .sbk_t/host.txt .sbk_t/$$w.txt \
 	   || { echo "test-sbk: $$w's frames differ from gcc's:"; diff .sbk_t/host.txt .sbk_t/$$w.txt | head -5; \
 	        tail -5 .sbk_t/$$w.out; exit 1; }; done && \
 	 { grep -Eq 'C4DOS version' .sbk_t/dos.out || { echo "test-sbk: C4DOS did not come back to its prompt:"; \
 	     tail -5 .sbk_t/dos.out; exit 1; }; } && \
+	 { grep -q 'sbk savetest OK' .sbk_t/c4ix.out || { echo "test-sbk: a save on C4IX's disk did not come back:"; \
+	     tail -5 .sbk_t/c4ix.out; exit 1; }; } && \
 	 echo "test-sbk: $$(wc -l < .sbk_t/host.txt) frames, gcc and c4lc on the bare machine, C4DOS and C4IX: OK" && rm -rf .sbk_t
 PHONY += test-sbk
 
@@ -141,7 +144,7 @@ $(SBK_REF)/.got:
 	git clone -q https://github.com/32blit/32blit-sdk.git $(SBK_REF)/sdk
 	git -C $(SBK_REF)/sdk checkout -q $(SBK_SDK_COMMIT)
 	touch $@
-$(SBK_REF)/sbk-ref: $(SBK_REF)/.got $(SBK)/ref/ref-main.cpp $(SBK)/c4/mkassets.py $(SBK)/c4/demo.c $(SBK)/c4/host-math.c
+$(SBK_REF)/sbk-ref: $(SBK_REF)/.got $(SBK)/ref/ref-main.cpp $(SBK)/c4/mkassets.py $(SBK)/c4/demo.c $(SBK)/c4/host-math.c $(SBK)/src/sbkmath.c
 	python3 -I $(SBK)/c4/mkassets.py --ref $(SBK)/data $(SBK_REF)/game
 	cd $(SBK_REF)/game && python3 -I extract_track_info.py . .
 	for f in $(SBK_REF_GAME) track-info assets; do g++ -std=c++20 -O1 -w -ffp-contract=off -fno-builtin -fwrapv -I$(SBK_REF)/game \
@@ -150,6 +153,7 @@ $(SBK_REF)/sbk-ref: $(SBK_REF)/.got $(SBK)/ref/ref-main.cpp $(SBK)/c4/mkassets.p
 	   -c $(SBK_REF)/sdk/32blit/$$f.cpp -o $(SBK_REF)/$$(echo $$f | tr / _).o || exit 1; done
 	gcc -O2 -w -ffp-contract=off -fno-builtin -I. -c $(SBK)/c4/host-math.c -o $(SBK_REF)/host-math.o
 	gcc -O2 -w -c $(SBK)/c4/demo.c -o $(SBK_REF)/demo.o
+	gcc -O2 -w -msse2 -mfpmath=sse -ffp-contract=off -fno-strict-aliasing -I$(SBK)/src -c $(SBK)/src/sbkmath.c -o $(SBK_REF)/sbkmath.o
 	g++ -std=c++20 -O1 -w -ffp-contract=off -fno-builtin -I$(SBK_REF)/sdk/32blit -o $@ $(SBK)/ref/ref-main.cpp \
 	   $(SBK_REF)/*.o
 sbk-ref: $(SBK_REF)/sbk-ref

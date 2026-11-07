@@ -307,7 +307,7 @@ static void ts_render(void) {
 	c->pos.z = c->pos.z + c->look_at.z;
 	cam_update(c);
 
-	track_render(tsel.track, c, 1);
+	track_render(tsel.track, c, SCREEN_H, -1);
 	menu_render(&tsel.track_menu);
 
 	// some info

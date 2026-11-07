@@ -24,6 +24,7 @@ typedef struct Surf {
 	unsigned char *data;
 	int w, h;
 	int *pal;
+	int ncol;
 } Surf;
 
 typedef struct Font {
@@ -41,6 +42,7 @@ enum { XFORM_HORIZONTAL = 1 };
 extern int *fb;
 extern int clip_x, clip_y, clip_w, clip_h;
 extern int scr_alpha, scr_pen;
+extern int drawn_y0, drawn_y1;          // the scanlines scr_stretch has touched
 void scr_init(void);
 void scr_clip(int x, int y, int w, int h);
 void pen_span(int pen, int off, int c);
@@ -49,6 +51,7 @@ void scr_rect(int x, int y, int w, int h);
 void scr_hspan(int x, int y, int c);
 void scr_vspan(int x, int y, int c);
 void scr_triangle(int x1, int y1, int x2, int y2, int x3, int y3);
+void scr_blit_tinted(unsigned char *src, int w, int h, int x0, int y0, int *rgb, int a);
 void scr_blit(Surf *src, int sx, int sy, int sw, int sh, int px, int py);
 void scr_sprite(Surf *src, int sx, int sy, int sw, int sh, int px, int py);
 void scr_sprite_scaled(Surf *src, int sx, int sy, int sw, int sh, int px, int py, int ox, int oy, float scale, int t);
@@ -65,7 +68,7 @@ int  pen_alpha(int a1, int a2);
 enum { MAX_TRACKS = 2, NUM_KARTS = 8 };
 typedef struct RectF { int x, y, w, h; float fx, fy, fx2, fy2; } RectF;
 typedef struct ObjInfo { int type, scale, x, y, sx, sy, sw, sh, ox, oy; } ObjInfo;
-typedef struct Seg { float ax, ay, bx, by, rx, ry, dx, dy, rxs, nx, ny; } Seg;
+typedef struct Seg { float ax, ay, bx, by, rx, ry, dx, dy, rxs, nx, ny; int minx, miny, maxx, maxy; } Seg;
 typedef struct TrackInfo {
 	char *name;
 	int w, h, shift;
@@ -83,6 +86,8 @@ typedef struct TrackInfo {
 	float *friction;       // of each of the 256 tiles
 	unsigned char *mm_class;   // the minimap's colour for each
 	int *tile_base;        // where each tile starts in the sheet
+	unsigned char *world;  // the map as one texture (track.c), once it has been wanted
+	int wshift, edge_empty;
 } TrackInfo;
 extern TrackInfo track_info[];
 extern int num_tracks;
@@ -118,6 +123,8 @@ typedef struct TrackObject {
 	int type, respawn_timer;
 	Sprite3D sprite;
 	Vec3 vel;
+	float sr, lim;         // its radius, and how near a kart's square of distance touches
+	int ix, iy, irad;      // the same in whole numbers, a little wider
 } TrackObject;
 typedef struct Track {
 	TrackInfo *info;
@@ -130,10 +137,12 @@ typedef struct Track {
 } Track;
 Track *track_new(TrackInfo *info);
 void track_free(Track *t);
-void track_render(Track *t, Camera *c, int plain);
+void track_render(Track *t, Camera *c, int any_y0, int any_y1);
 void track_reset_objects(Track *t);
 TrackObject *track_add_object(Track *t);
-int  track_closest_segment(Track *t, float px, float py, float *segment_t);
+int  track_closest_segment(Track *t, float px, float py, float *segment_t, int hint);
+void obj_bounds(TrackObject *ob);
+void obj_moved(TrackObject *ob);
 float track_friction(Track *t, float px, float py);
 void rot_y(Vec3 *v, float degrees);
 
@@ -226,7 +235,7 @@ extern unsigned sbk_now;
 extern unsigned btn_state, btn_pressed, btn_released;
 extern int sbk_quit;
 // -demo -perf: what a race costs, by part
-typedef struct PerfRace { unsigned frames, updates, update, lists, mode7, sprites, hud; } PerfRace;
+typedef struct PerfRace { unsigned frames, updates, update, lists, mode7, sprites, hud, max_mode7, max_sprites, max_hud, max_update; } PerfRace;
 extern int sbk_perf;
 extern PerfRace perf_race[];
 void game_change_state(GameState *s);
@@ -249,6 +258,17 @@ int race_end_menu_up(void);
 extern int kart_info_count;
 extern char *kart_info_name[2];
 extern Surf *kart_info_surf[2];
+
+// sbkmath.c
+float sbk_sinf(float x);
+float sbk_cosf(float x);
+float sbk_atan2f(float y, float x);
+float sbk_roundf(float x);
+#ifdef SBK_C4
+float sbk_sqrtf(float x);
+#else
+#define sbk_sqrtf sqrtf
+#endif
 
 // the platform (c4/plat-*.c, c4/video.c)
 int  plat_ms(void);

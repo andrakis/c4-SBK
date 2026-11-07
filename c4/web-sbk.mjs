@@ -64,13 +64,18 @@ try {
 
   // a race from the main menu: Enter for Race, a kart and a track; the
   // countdown; drive, turn each way; show what changes in the picture
-  const race = async (who, rx, ry, rw, rh) => {
+  const race = async (who, rx, ry, rw, rh, desert, drive = 0) => {
     await tap('Enter');             // Race
     await sleep(600);
     await shot(`${who}-kart-select`);
     await tap('Enter');             // the kart
     await sleep(1500);
     await shot(`${who}-track-select`);
+    if (desert) {
+      await tap('ArrowDown');
+      await sleep(2500);
+      await shot(`${who}-track-select-desert`);
+    }
     await tap('Enter');             // the track
     await sleep(1200);
     await shot(`${who}-countdown`);
@@ -82,6 +87,8 @@ try {
     await sleep(700);
     const c = await region(rx, ry, rw, rh);
     ok(`${who}: Z accelerates: the track goes by`, a !== c, a);
+    await sleep(drive);             // and on: straight ahead soon leaves the road
+    await shot(`${who}-further`);
     await down('ArrowLeft');
     await sleep(900);
     await up('ArrowLeft');
@@ -116,7 +123,7 @@ try {
   await tap('z');                   // Press a button!
   await sleep(1500);
   await shot('c4ix-2-menu');
-  await race('c4ix', 0, 300, 640, 180);
+  await race('c4ix', 0, 300, 640, 180, true, 25000);   // the desert, for long enough to time it
   await tap('Escape');              // pause
   await sleep(300);
   await shot('c4ix-3-paused');
@@ -141,7 +148,7 @@ try {
   await shot('c4ix-5-desktop-again');
   {
     const s = await find(/^sbk: /);
-    console.log('web-sbk: display:', s.map(t => t.s.trim()).join(' | '));
+    console.log('web-sbk: on the display:', s.map(t => t.s.trim().replace('sbk: ', '')).join(' | '));
   }
 
   // ---- in the window it was started from ----

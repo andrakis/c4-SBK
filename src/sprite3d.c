@@ -5,7 +5,7 @@
 
 extern float sbk_pi;
 
-float vec3_len(Vec3 *v) { return sqrtf(v->x * v->x + v->y * v->y + v->z * v->z); }
+float vec3_len(Vec3 *v) { return sbk_sqrtf(v->x * v->x + v->y * v->y + v->z * v->z); }
 
 void vec3_normalize(Vec3 *v) {
 	float d;
@@ -59,16 +59,19 @@ void sprite_init(Sprite3D *s) {
 	s->z = 0.0f;
 }
 
-// Camera::world_to_screen, into the sprite's own
+// Camera::world_to_screen, into the sprite's own. A sprite outside the camera's
+// range isn't drawn, so nothing looks at where on the screen it would have been.
 void sprite_update(Sprite3D *s, Camera *c) {
-	float dx, dy, dz, x, y, scale;
+	float dx, dy, dz, x, y, z, scale;
 	dx = s->world_pos.x - c->pos.x;
 	dy = s->world_pos.y - c->pos.y;
 	dz = s->world_pos.z - c->pos.z;
+	z = dx * c->forward.x + dy * c->forward.y + dz * c->forward.z;
+	s->z = z;
+	if (!(z >= c->near_z && z <= c->far_z)) return;
 	x = dx * c->right.x + dy * c->right.y + dz * c->right.z;
 	y = -(dx * c->up.x + dy * c->up.y + dz * c->up.z);
-	s->z = dx * c->forward.x + dy * c->forward.y + dz * c->forward.z;
-	scale = c->focal / s->z;
+	scale = c->focal / z;
 	s->screen_scale = scale;
 	// int32_t, then an int16_t each
 	s->screen_x = (((int) (x * scale) + c->vx + c->vw / 2) << 16) >> 16;
@@ -89,18 +92,18 @@ void sprite_render(Sprite3D *s, Camera *c) {
 		sz = s->look_dir.z;
 
 		// normalize both, with y already nothing
-		d = sqrtf(cx * cx + 0.0f + cz * cz);
+		d = sbk_sqrtf(cx * cx + 0.0f + cz * cz);
 		cx = cx / d;
 		cz = cz / d;
-		d = sqrtf(sx * sx + 0.0f + sz * sz);
+		d = sbk_sqrtf(sx * sx + 0.0f + sz * sz);
 		sx = sx / d;
 		sz = sz / d;
 
-		ang = atan2f(cx * sz - cz * sx, cx * sx + 0.0f + cz * sz);
+		ang = sbk_atan2f(cx * sz - cz * sx, cx * sx + 0.0f + cz * sz);
 		pi2 = sbk_pi * 2.0f;
 		ang = pi2 - ang;
 
-		rot = (int) roundf((ang / pi2) * (float) total_frames);
+		rot = (int) sbk_roundf((ang / pi2) * (float) total_frames);
 		frame = (rot + 15) % total_frames;
 		if (frame >= s->rotation_frames) {
 			frame = (s->rotation_frames - 2) - (frame - s->rotation_frames);

@@ -62,6 +62,7 @@ static void rd_image(Surf *s) {
 	s->w = rd32();
 	s->h = rd32();
 	np = rd32();
+	s->ncol = np;
 	s->pal = rd_palette(np);
 	s->data = (unsigned char *) malloc(s->w * s->h);
 	n = rd32();
@@ -121,9 +122,13 @@ static void rd_track(TrackInfo *t) {
 		sg->dx = sg->ry;
 		sg->dy = -sg->rx;
 		sg->rxs = (sg->rx * sg->dy) - (sg->ry * sg->dx);
-		sg->nx = sqrtf(sg->rx * sg->rx + sg->ry * sg->ry);
+		sg->nx = sbk_sqrtf(sg->rx * sg->rx + sg->ry * sg->ry);
 		sg->ny = sg->ry / sg->nx;
 		sg->nx = sg->rx / sg->nx;
+		sg->minx = t->route[i * 2] < t->route[i * 2 + 2] ? t->route[i * 2] : t->route[i * 2 + 2];
+		sg->maxx = t->route[i * 2] > t->route[i * 2 + 2] ? t->route[i * 2] : t->route[i * 2 + 2];
+		sg->miny = t->route[i * 2 + 1] < t->route[i * 2 + 3] ? t->route[i * 2 + 1] : t->route[i * 2 + 3];
+		sg->maxy = t->route[i * 2 + 1] > t->route[i * 2 + 3] ? t->route[i * 2 + 1] : t->route[i * 2 + 3];
 	}
 
 	t->num_rects = rd32();
@@ -200,6 +205,7 @@ void assets_load(void) {
 	a_kart_alt.w = a_kart.w;
 	a_kart_alt.h = a_kart.h;
 	a_kart_alt.pal = rd_palette(256);
+	a_kart_alt.ncol = 256;
 	rd_font(&tall_font);
 	rd_font(&big_number_font);
 	rd_font(&menu_font);

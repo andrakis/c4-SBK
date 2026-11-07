@@ -10,7 +10,7 @@
 #include "plat.h"
 
 float sbk_pi = 3.14159265358979323846f;
-float sbk_inf, sbk_pi4;
+float sbk_inf, sbk_pi4, sbk_deg;
 
 unsigned sbk_now;
 unsigned btn_state, btn_pressed, btn_released;
@@ -72,7 +72,10 @@ unsigned sbk_random(void) {
 	return rng;
 }
 
-// ---- saves: in memory under -demo, which leaves no trace; files otherwise ----
+// ---- saves ----
+// Each is kept in memory, for the rest of the game, and written to a file. The bare
+// machine and C4DOS can't write one here, but a ghost still lasts as long as the
+// game does. -demo leaves no trace, so it stops at memory.
 
 typedef struct MemSave { int slot, len; char *data; struct MemSave *next; } MemSave;
 static MemSave *mem_saves;
@@ -80,35 +83,30 @@ static int saves_in_memory;
 
 int read_save(void *data, int len, int slot) {
 	MemSave *m;
-	if (saves_in_memory) {
-		for (m = mem_saves; m; m = m->next)
-			if (m->slot == slot) {
-				if (m->len != len) return 0;
-				memcpy((char *) data, m->data, len);
-				return 1;
-			}
-		return 0;
-	}
+	for (m = mem_saves; m; m = m->next)
+		if (m->slot == slot) {
+			if (m->len != len) return 0;
+			memcpy((char *) data, m->data, len);
+			return 1;
+		}
+	if (saves_in_memory) return 0;
 	return plat_save_read(slot, (char *) data, len);
 }
 
 void write_save(void *data, int len, int slot) {
 	MemSave *m;
-	if (saves_in_memory) {
-		for (m = mem_saves; m; m = m->next)
-			if (m->slot == slot) break;
-		if (!m) {
-			m = (MemSave *) malloc(sizeof(MemSave));
-			m->slot = slot;
-			m->data = (char *) malloc(len);
-			m->next = mem_saves;
-			mem_saves = m;
-		}
+	for (m = mem_saves; m; m = m->next)
+		if (m->slot == slot) break;
+	if (!m) {
+		m = (MemSave *) malloc(sizeof(MemSave));
+		m->slot = slot;
+		m->data = (char *) malloc(len);
 		m->len = len;
-		memcpy(m->data, (char *) data, len);
-		return;
+		m->next = mem_saves;
+		mem_saves = m;
 	}
-	plat_save_write(slot, (char *) data, len);
+	if (m->len == len) memcpy(m->data, (char *) data, len);
+	if (!saves_in_memory) plat_save_write(slot, (char *) data, len);
 }
 
 // ---- -demo ----
@@ -157,7 +155,7 @@ static int record_mode;
 #endif
 
 static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
-	unsigned t, u0, u1, r0, r1, sum_u, sum_r, max_u, max_r, sum_t, c;
+	unsigned t, u0, u1, r0, r1, sum_u, sum_r, max_u, max_r, c;
 	int frame, n, mask, nu, want;
 	char line[64];
 	sbk_perf = perf;
@@ -168,7 +166,7 @@ static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
 	sbk_now = t;
 	game_init();
 	game_tick(t);
-	sum_u = 0; sum_r = 0; max_u = 0; max_r = 0; sum_t = 0;
+	sum_u = 0; sum_r = 0; max_u = 0; max_r = 0;
 	while (1) {
 #ifdef SBK_RECORD
 		if (record_mode) {
@@ -184,7 +182,7 @@ static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
 		u0 = plat_cycles();
 		game_tick(t);
 		u1 = plat_cycles();
-		sum_u += u1 - u0;
+		sum_u += (u1 - u0) >> 8;
 		if (u1 - u0 > max_u) max_u = u1 - u0;
 		if (++n == DEMO_UPDATES) {
 			n = 0;
@@ -192,7 +190,7 @@ static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
 			game_render();
 			r1 = plat_cycles();
 			c = r1 - r0;
-			sum_r += c;
+			sum_r += c >> 8;
 			if (c > max_r) { max_r = c; want = frame; }
 			if (!perf) {
 				sprintf(line, "sbk %d %08x\n", frame, frame_hash());
@@ -206,24 +204,28 @@ static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
 	if (perf) {
 		sprintf(line, "sbkperf frames %d\n", frame);
 		plat_print(line);
-		sprintf(line, "sbkperf update avg %u max %u\n", sum_u / (frame * DEMO_UPDATES), max_u);
+		sprintf(line, "sbkperf update avg %u max %u\n", (sum_u / (frame * DEMO_UPDATES)) << 8, max_u);
 		plat_print(line);
-		sprintf(line, "sbkperf render avg %u max %u at frame %d\n", sum_r / frame, max_r, want);
+		sprintf(line, "sbkperf render avg %u max %u at frame %d\n", (sum_r / frame) << 8, max_r, want);
 		plat_print(line);
 		for (nu = 0; nu < MAX_TRACKS; nu++) {
 			if (!perf_race[nu].frames) continue;
 			c = perf_race[nu].frames;
 			sprintf(line, "sbkperf %s frames %u:", track_info[nu].name, c);
 			plat_print(line);
-			sprintf(line, " update %u", perf_race[nu].updates ? perf_race[nu].update / perf_race[nu].updates : 0);
+			sprintf(line, " update %u", perf_race[nu].updates ? (perf_race[nu].update / perf_race[nu].updates) << 8 : 0);
 			plat_print(line);
-			sprintf(line, " lists %u", perf_race[nu].lists / c);
+			sprintf(line, " lists %u", (perf_race[nu].lists / c) << 8);
 			plat_print(line);
-			sprintf(line, " mode7 %u", perf_race[nu].mode7 / c);
+			sprintf(line, " mode7 %u", (perf_race[nu].mode7 / c) << 8);
 			plat_print(line);
-			sprintf(line, " sprites %u", perf_race[nu].sprites / c);
+			sprintf(line, " sprites %u", (perf_race[nu].sprites / c) << 8);
 			plat_print(line);
-			sprintf(line, " hud %u\n", perf_race[nu].hud / c);
+			sprintf(line, " hud %u\n", (perf_race[nu].hud / c) << 8);
+			plat_print(line);
+			sprintf(line, "  worst: mode7 %u sprites %u", perf_race[nu].max_mode7, perf_race[nu].max_sprites);
+			plat_print(line);
+			sprintf(line, " hud %u update %u\n", perf_race[nu].max_hud, perf_race[nu].max_update);
 			plat_print(line);
 		}
 	}
@@ -235,10 +237,25 @@ static int demo_run(int perf, int frames, int shot_frame, char *shot_file) {
 	return 0;
 }
 
+// -savetest: that a file written here comes back, the way a save's would. -demo
+// keeps its saves in memory, so this is what tries the files.
+static int save_test(void) {
+	char *a, *b;
+	int i, ok;
+	a = (char *) malloc(1000);
+	b = (char *) malloc(1000);
+	for (i = 0; i < 1000; i++) a[i] = (char) (i * 7);
+	plat_save_write(4095, a, 1000);
+	ok = plat_save_read(4095, b, 1000);
+	for (i = 0; ok && i < 1000; i++) if (a[i] != b[i]) ok = 0;
+	plat_print(ok ? "sbk savetest OK\n" : "sbk savetest FAILED\n");
+	return !ok;
+}
+
 // ---- playing ----
 
 static int play(int window, int stats) {
-	unsigned t, t0, last_frame, c0, frames;
+	unsigned t, t0, last_frame, c0, c1, frames;
 	int ms, start;
 	char line[80];
 	frames = 0;
@@ -266,18 +283,20 @@ static int play(int window, int stats) {
 		game_render();
 		video_show();
 		frames++;
+		// -stats: every five seconds, frames and instructions (shown when the game ends)
+		if (stats && ms - start >= 5000) {
+			c1 = plat_cycles();
+			sprintf(line, "sbk: %u frames a second, %u K instructions each\n", frames * 1000 / (ms - start), (c1 - c0) / frames / 1000);
+			plat_print(line);
+			start = ms;
+			c0 = c1;
+			frames = 0;
+		}
 		// about 60 frames a second, as upstream's on a display
 		last_frame = (unsigned) plat_ms() - (unsigned) ms;
 		if (last_frame < 16) plat_sleep(16 - (int) last_frame);
 	}
 	video_close();
-	if (stats) {
-		ms = plat_ms() - start;
-		sprintf(line, "sbk: %u frames in %d ms, %u a second\n", frames, ms, ms ? frames * 1000 / ms : 0);
-		plat_print(line);
-		sprintf(line, "sbk: %u K instructions a frame\n", frames ? (plat_cycles() - c0) / frames / 1000 : 0);
-		plat_print(line);
-	}
 	return 0;
 }
 
@@ -291,6 +310,7 @@ int main(int argc, char **argv) {
 		else if (!strcmp(argv[i], "-perf")) perf = 1;
 		else if (!strcmp(argv[i], "-window")) window = 1;
 		else if (!strcmp(argv[i], "-stats")) stats = 1;
+		else if (!strcmp(argv[i], "-savetest")) return save_test();
 		else if (!strcmp(argv[i], "-frames") && i + 1 < argc) frames = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "-shot") && i + 2 < argc) { shot_frame = atoi(argv[++i]); shot_file = argv[++i]; }
 #ifdef SBK_RECORD
@@ -304,6 +324,7 @@ int main(int argc, char **argv) {
 	}
 	sbk_inf = 1.0e30f * 1.0e30f;
 	sbk_pi4 = sbk_pi / 4.0f;
+	sbk_deg = sbk_pi / 180.0f;
 	scr_init();
 	assets_load();
 	if (demo) {

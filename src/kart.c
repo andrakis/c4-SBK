@@ -63,7 +63,7 @@ void kart_disable(Kart *k) {
 
 // Vec2::angle
 static float vec2_angle(float x, float y, float ox, float oy) {
-	return atan2f(x * oy - y * ox, x * ox + y * oy);
+	return sbk_atan2f(x * oy - y * ox, x * ox + y * oy);
 }
 
 static void kart_use_item(Kart *k) {
@@ -108,6 +108,7 @@ static void kart_use_item(Kart *k) {
 	ob->vel.x = s->look_dir.x * 200.0f;
 	ob->vel.y = s->look_dir.y * 200.0f;
 	ob->vel.z = s->look_dir.z * 200.0f;
+	obj_bounds(ob);
 	k->current_item = ITEM_NONE;
 }
 
@@ -117,7 +118,7 @@ static void kart_auto_drive(Kart *k) {
 	TimeTrialSave *tt;
 	GhostEntry *e, *n;
 	int index, seg, next, last, off_track;
-	float lx, lz, px, py, rvx, rvy, rpx, rpy, tcx, tcy, dist, recenter, ang, scale, d, nx, ny, turn;
+	float lx, lz, px, py, rvx, rvy, rpx, rpy, tcx, tcy, dist, recenter, ang, scale, d, turn;
 
 	s = &k->sprite;
 	// replay ghost
@@ -135,8 +136,8 @@ static void kart_auto_drive(Kart *k) {
 			k->vel.x = (float) (n->pos_x - e->pos_x) / 8.0f * 10.0f;
 			k->vel.z = (float) (n->pos_z - e->pos_z) / 8.0f * 10.0f;
 
-			s->look_dir.x = cosf((float) e->look_ang / 10430.0f);
-			s->look_dir.z = sinf((float) e->look_ang / 10430.0f);
+			s->look_dir.x = sbk_cosf((float) e->look_ang / 10430.0f);
+			s->look_dir.z = sbk_sinf((float) e->look_ang / 10430.0f);
 
 			k->acc.x = 0.0f; k->acc.y = 0.0f; k->acc.z = 0.0f;
 			return;
@@ -168,7 +169,7 @@ static void kart_auto_drive(Kart *k) {
 	// try to stay on track
 	tcx = rpx - px;
 	tcy = rpy - py;
-	dist = sqrtf(tcx * tcx + tcy * tcy);
+	dist = sbk_sqrtf(tcx * tcx + tcy * tcy);
 
 	recenter = 0.0f;
 
@@ -219,11 +220,11 @@ void kart_update(Kart *k) {
 	TrackObject *ob;
 	GhostEntry *ge;
 	TimeTrialSave *tt;
-	int on_track, seg, ghost_finished, was_above, i, n, forwards, crossed;
-	float px, py, friction, len, half, dot;
+	int on_track, seg, ghost_finished, was_above, i, n, forwards, crossed, kix, kiz, use, di;
+	float px, py, friction, len, half;
 	float bx, by, bz, dragx, dragy, dragz, fx, fy, fz;
 	float finx, finy, f0x, f0y, before, after;
-	float vx, vy, dist, pen, ax, ay, az, bvx, bvy, bvz, kx, kz, ox, oz, sr, lim;
+	float vx, vy, dist, pen, ax, ay, az, bvx, bvy, bvz, kx, kz, ox, oz, lim;
 	float rx, ry, rl, rpx, rpy, retx, retz, retlx, retlz, frac;
 	Vec3 rl3;
 
@@ -282,7 +283,7 @@ void kart_update(Kart *k) {
 	friction = track_friction(trk, px, py);
 	on_track = friction != 0.0f;
 
-	k->current_route_segment = track_closest_segment(trk, px, py, &k->current_route_frac);
+	k->current_route_segment = track_closest_segment(trk, px, py, &k->current_route_frac, k->current_route_segment);
 	seg = k->current_route_segment;
 
 	// trigger boosts if friction is negative
@@ -408,7 +409,7 @@ void kart_update(Kart *k) {
 			dist = vx * vx + vy * vy;
 			if (dist >= 361.0f) continue;         // (kart_radius + kart_radius) squared
 
-			dist = sqrtf(dist);
+			dist = sbk_sqrtf(dist);
 			vx = vx / dist;
 			vy = vy / dist;
 			pen = 19.0f - dist;
@@ -451,7 +452,7 @@ void kart_update(Kart *k) {
 			dist = vx * vx + vy * vy;
 			if (dist > 90.25f) continue;             // kart_radius squared
 
-			dist = sqrtf(dist);
+			dist = sbk_sqrtf(dist);
 			vx = vx / dist;
 			vy = vy / dist;
 			pen = kart_radius - dist;
@@ -465,16 +466,22 @@ void kart_update(Kart *k) {
 			s->world_pos.z = s->world_pos.z + vy * pen;
 		}
 
-		// track sprites: TrackObject::collide
+		// track sprites: TrackObject::collide. Most are far off, which whole numbers can say.
 		n = trk->num_objects;
 		ob = trk->objects;
+		kix = (int) s->world_pos.x;
+		kiz = (int) s->world_pos.z;
+		use = kix < 30000 && kix > -30000 && kiz < 30000 && kiz > -30000;
 		for (i = 0; i < n; i++, ob++) {
 			if (ob->type == OBJ_REMOVED || ob->respawn_timer != 0) continue;
-			sr = (float) ob->sprite.size_w * 4.0f * ob->sprite.scale;
-			lim = (kart_radius + sr) * (kart_radius + sr);
+			if (use) {
+				di = kix - ob->ix;
+				if (di > ob->irad || di < -ob->irad) continue;
+				di = kiz - ob->iy;
+				if (di > ob->irad || di < -ob->irad) continue;
+			}
+			lim = ob->lim;
 			vx = s->world_pos.x - ob->sprite.world_pos.x;
-			// a square past the limit stays past it with another square added
-			if (vx * vx >= lim) continue;
 			vy = s->world_pos.z - ob->sprite.world_pos.z;
 			dist = vx * vx + vy * vy;
 			if (dist >= lim) continue;
@@ -485,14 +492,17 @@ void kart_update(Kart *k) {
 				continue;
 			}
 
-			dist = sqrtf(dist);
+			dist = sbk_sqrtf(dist);
 			vx = vx / dist;
 			vy = vy / dist;
-			pen = kart_radius + sr - dist;
+			pen = kart_radius + ob->sr - dist;
 
 			s->world_pos.x = s->world_pos.x + vx * pen;
 			s->world_pos.y = s->world_pos.y + 0.0f * pen;
 			s->world_pos.z = s->world_pos.z + vy * pen;
+			kix = (int) s->world_pos.x;
+			kiz = (int) s->world_pos.z;
+			use = kix < 30000 && kix > -30000 && kiz < 30000 && kiz > -30000;
 
 			if (ob->type == OBJ_DROPPED || ob->type == OBJ_PROJECTILE) {
 				// assume hitting this is bad (okay unless we allow dropped boosts)
@@ -511,7 +521,7 @@ void kart_update(Kart *k) {
 			tt->ghost_data_used = tt->ghost_data_used + 1;
 			ge->pos_x = (int) floorf(s->world_pos.x * 8.0f);
 			ge->pos_z = (int) floorf(s->world_pos.z * 8.0f);
-			ge->look_ang = (int) floorf(atan2f(s->look_dir.z, s->look_dir.x) * 10430.0f);
+			ge->look_ang = (int) floorf(sbk_atan2f(s->look_dir.z, s->look_dir.x) * 10430.0f);
 		}
 	}
 }
