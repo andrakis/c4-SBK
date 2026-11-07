@@ -1,0 +1,3 @@
+# the art, which make sbk-data fetches (data/README.md); the licence on it is not settled
+data/*
+!data/README.md

@@ -1,0 +1,3 @@
+# Super Blit Kart (games/sbk): one program, with its art inside it
+sbk/:
+	sbk.c4r: c4ix-sbk.c4r
