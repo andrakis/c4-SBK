@@ -31,8 +31,8 @@ What is known, from reading upstream's repository on 2026-11-08:
 So it is probably all MIT, as the survey said, but that is a reading, not a
 statement. To settle it: ask the author (a GitHub issue would do), or draw our own,
 which is small work: `c4/mkassets.py` says what's needed. Until then the game
-should not go on a public disk. Nothing has been pushed, and the Pages site hasn't
-been touched.
+should not go on a public disk. The `c4` branch is pushed to andrakis/c4-SBK without
+the art, and the Pages site hasn't been touched.
 
 ## Playing
 
