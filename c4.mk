@@ -16,7 +16,7 @@ SBK_HDRS   := $(wildcard $(SBK)/src/*.h $(SBK)/c4/*.h) \
               $(wildcard src/c4ix/libc/include/*.h src/c4ix/libc/include/sys/*.h) \
               src/c4ix/include/display.h src/c4ix/include/window.h src/c4ix/include/window.c \
               libjs/guest/gui.h libjs/guest/gui.c
-SBK_CC     := ./c4sp32 -c 400000 src/c4sp/lisp/c4lc.lisp -O $(IMG_G) -mfuse -fno-builtin -c -conforming \
+SBK_CC     := $(call lc32,-c 400000) -O $(IMG_G) -mfuse -fno-builtin -c -conforming \
               -D C4SBK -D SBK_C4 -I $(SBK)/c4 -I $(SBK)/src -I src/c4ix/libc/include -I src/c4ix/include -I libjs/guest
 SBK_GEN    := .sbk/gen
 
@@ -53,16 +53,16 @@ $(SBK_GEN)/sbk-assets.c: $(SBK)/c4/mkassets.py $(wildcard $(SBK_FILES))
 	@mkdir -p $(SBK_GEN)
 	python3 -I $(SBK)/c4/mkassets.py $(SBK)/data $@
 
-.sbk/sbk-assets.c4o: $(SBK_GEN)/sbk-assets.c $(C4LC_LISP) .img_g | c4sp32
+.sbk/sbk-assets.c4o: $(SBK_GEN)/sbk-assets.c $(C4LC_LISP) .img_g | $(LC32_BIN)
 	@mkdir -p .sbk
 	$(SBK_CC) $< $@ > /dev/null
-.sbk/%.c4o: $(SBK)/src/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | c4sp32
+.sbk/%.c4o: $(SBK)/src/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | $(LC32_BIN)
 	@mkdir -p .sbk
 	$(SBK_CC) $< $@ > /dev/null
-.sbk/%.c4o: $(SBK)/c4/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | c4sp32
+.sbk/%.c4o: $(SBK)/c4/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | $(LC32_BIN)
 	@mkdir -p .sbk
 	$(SBK_CC) $< $@ > /dev/null
-.sbk/plat/%.c4o: $(SBK)/c4/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | c4sp32
+.sbk/plat/%.c4o: $(SBK)/c4/%.c $(SBK_HDRS) $(C4LC_LISP) .img_g | $(LC32_BIN)
 	@mkdir -p .sbk/plat
 	$(SBK_CC) $< $@ > /dev/null
 
