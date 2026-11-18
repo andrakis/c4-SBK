@@ -15,7 +15,7 @@ SBK_C4     := video save demo
 SBK_HDRS   := $(wildcard $(SBK)/src/*.h $(SBK)/c4/*.h) \
               $(wildcard src/c4ix/libc/include/*.h src/c4ix/libc/include/sys/*.h) \
               src/c4ix/include/display.h src/c4ix/include/window.h src/c4ix/include/window.c \
-              libjs/guest/gui.h libjs/guest/gui.c
+              libjs/guest/gui.h libjs/guest/gui.c libjs/guest/accel.h
 SBK_CC     := $(call lc32,-c 400000) -O $(IMG_G) -mfuse -fno-builtin -c -conforming \
               -D C4SBK -D SBK_C4 -I $(SBK)/c4 -I $(SBK)/src -I src/c4ix/libc/include -I src/c4ix/include -I libjs/guest
 SBK_GEN    := .sbk/gen
@@ -93,14 +93,27 @@ sbk-record: .sbk/host/sbk-record
 	.sbk/host/sbk-record -record $(SBK)/c4/demo.c -perf > /dev/null
 PHONY += sbk-host sbk-record
 
+# c4's rewrite: the game's accelerators (c4/accel.mjs) against their loops,
+# on the bare machine, with libjs's own (cli.js loads them, docs/accel.md).
+# In a directory of its own. The demo runs below have them, so their frames
+# are the accelerators'; the gcc build has none.
+.sbk/test/acceltest.c4o: $(SBK)/c4/acceltest.c $(SBK_HDRS) $(C4LC_LISP) .img_g | $(LC32_BIN)
+	@mkdir -p .sbk/test
+	$(SBK_CC) $< $@ > /dev/null
+.sbk/test/acceltest.c4r: .sbk/test/acceltest.c4o libc-bare-objs
+	./c4rlink32 $< .libc-bare/libc-*.c4o -o $@ > /dev/null
+
 # test-sbk: the demo (c4/demo.c), one stream of buttons on a clock of its own,
 # with a fixed seed, built by gcc and by c4lc -- on the bare machine, under C4DOS
 # and inside C4IX -- must draw the same frames: a line for each, with a checksum
 # of its pixels. The C4DOS and C4IX runs must also end and give the machine back,
 # and a save written to C4IX's disk must come back (-demo's are in memory).
-test-sbk: c4bb-images
+test-sbk: c4bb-images .sbk/test/acceltest.c4r
 	@if [ ! -f $(SBK)/data/kart.png ] || [ ! -f src/c4bb/images/games/sbk.c4r ]; then \
 	   echo "test-sbk: skipped, no art (games/sbk/data/README.md)"; exit 0; fi; \
+	 mkdir -p .sbk_t && { timeout 600 node libjs/cli.js -m 64 .sbk/test/acceltest.c4r > .sbk_t/accel.txt 2>&1; cat .sbk_t/accel.txt; } && \
+	 { grep -q "^accel: SBK's, [0-9]* cases, each as its loop has it" .sbk_t/accel.txt \
+	   || { echo "test-sbk: the accelerators do not draw as their loops"; exit 1; }; } && \
 	 $(MAKE) --no-print-directory sbk-host && \
 	 rm -rf .sbk_t && mkdir -p .sbk_t && \
 	 .sbk/host/sbk -demo | grep '^sbk ' > .sbk_t/host.txt && \

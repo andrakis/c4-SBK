@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sbk.h"
+#include "c4accel.h"   // c4: the browser's accelerators
 
 // kart-info.hpp: the same sprites, each with a palette
 int kart_info_count = 2;
@@ -14,7 +15,7 @@ Surf *kart_info_surf[2] = { &a_kart_alt, &a_kart };
 // ---- main-menu.cpp ----
 
 enum { MENU_TARGET_Y = 96, LOGO_TARGET_Y = 8 };
-enum { MM_RACE = 0, MM_TIME_TRIAL, MM_MULTIPLAYER };
+enum { MM_RACE = 0, MM_TIME_TRIAL, MM_MULTIPLAYER, MM_ACCEL };
 
 typedef struct MKart { int x, y, kart, speed; } MKart;
 
@@ -27,11 +28,23 @@ static struct {
 
 static GameState mm_state;
 
+// c4: the browser's accelerators (c4/c4accel.h), the menu's fourth line
+extern int sbk_demo_on;
+static char *mm_accel_label(void) {
+	if (!sbk_accel_avail()) return "Accelerated: none";
+	return sbk_accel_on ? "Accelerated: on" : "Accelerated: off";
+}
+
 static void mm_on_item(int id) {
 	switch (id) {
 	case MM_RACE: game_change_state(kart_select_new(MODE_RACE)); break;
 	case MM_TIME_TRIAL: game_change_state(kart_select_new(MODE_TIME_TRIAL)); break;
 	case MM_MULTIPLAYER: mm.message = "Maybe later : )"; break;
+	case MM_ACCEL:
+		if (!sbk_accel_avail()) { mm.message = "Not on this machine"; break; }
+		sbk_accel_set(!sbk_accel_on);
+		mm.menu.labels[3] = mm_accel_label();
+		break;
 	}
 }
 
@@ -145,6 +158,9 @@ GameState *main_menu_new(int initial) {
 	menu_add(&mm.menu, MM_RACE, "Race");
 	menu_add(&mm.menu, MM_TIME_TRIAL, "Time Trial");
 	menu_add(&mm.menu, MM_MULTIPLAYER, "Multiplayer");
+	// c4: not under -demo, whose recorded buttons and frames are the
+	// menu's three lines, as gcc's build draws them
+	if (!sbk_demo_on) menu_add(&mm.menu, MM_ACCEL, mm_accel_label());
 	menu_set_rect(&mm.menu, 0, menu_y, SCREEN_W, SCREEN_H - MENU_TARGET_Y);
 	mm.menu.on_item = mm_on_item;
 	mm_state.update = mm_update;

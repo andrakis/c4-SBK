@@ -8,6 +8,7 @@
 #include <string.h>
 #include <math.h>
 #include "sbk.h"
+#include "c4accel.h"   // c4: the browser's accelerators
 
 int *fb;
 int clip_x, clip_y, clip_w, clip_h;
@@ -34,6 +35,12 @@ void pen_span(int pen, int off, int c) {
 	if (!a) return;
 	a = ((a + 1) * (scr_alpha + 1)) >> 8;
 	d = fb + off;
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_pen(pen, d, c, a);
+		return;
+	}
 	if (a >= 255) {
 		v = pen & 0xFFFFFF;
 		// memcpy is one of the VM's opcodes, as cheap for a screen as for a word:
@@ -87,6 +94,12 @@ static void row_blit(Surf *src, int soff, int doff, int cnt) {
 	was_p = 0;
 	was_v = -1;
 	out = 0;
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_row(s, pal, d, cnt, alpha);
+		return;
+	}
 	do {
 		p = pal[*s++];
 		a = (((p >> 24) & 255) + 1) * alpha >> 8;
@@ -117,6 +130,12 @@ void scr_blit_tinted(unsigned char *src, int w, int h, int x0, int y0, int *rgb,
 	int x, y, c, v, was, wc, out, p, dr, dg, db;
 	unsigned char *s;
 	s = src;
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		if (h > 0) sbk_tint(src, w, h, fb + x0 + y0 * SCREEN_W, SCREEN_W * 4, rgb, a);
+		return;
+	}
 	for (y = 0; y < h; y++) {
 		d = fb + x0 + (y0 + y) * SCREEN_W;
 		was = -1;
@@ -311,6 +330,12 @@ void scr_stretch(Surf *src, int sx, int sy, int sw, int sh, int rx, int ry, int 
 	if (x_scale_px == 1) {
 		// no wider than the source: whatever else upstream's loop does, each
 		// pixel is the source pixel under it
+		// c4: in one instruction where the machine has the game's
+		// accelerators (c4/c4accel.h), the same pixels
+		if (SBK_ACCEL()) {
+			sbk_stretch1(data + sx, sy, sw2, pal, y, y_step, left, x_step, fb + doff, dw, dh, alpha1);
+			return;
+		}
 		do {
 			row = data + sx + (sy + (y >> 16)) * sw2;
 			x = left;
@@ -337,6 +362,12 @@ void scr_stretch(Surf *src, int sx, int sy, int sw, int sh, int rx, int ry, int 
 			doff += SCREEN_W;
 			y += y_step;
 		} while (--y_count);
+		return;
+	}
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_stretchw(data + sx, sy, sw2, pal, y, y_step, left, x_step, x_scale_px, fb + doff, dw, dh, alpha1);
 		return;
 	}
 	// wider than the source: every row steps through its source the same way, so
@@ -444,6 +475,12 @@ void scr_text(char *s, Font *f, int rx, int ry, int rw, int rh, int align) {
 	cw = f->char_w;
 	hb = (ch + 7) / 8;
 	size = cw * hb;
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_text(s, f->data, f->widths, cw, ch, cx, cy, clip_x, clip_y, clip_w, clip_h, plain, ink, scr_pen, scr_alpha, fb);
+		return;
+	}
 	while (*s) {
 		c = *s++ & 0x7F;
 		c = c < 32 ? 0 : c - 32;

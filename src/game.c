@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sbk.h"
+#include "c4accel.h"   // c4: the browser's accelerators
 #include "plat.h"
 
 float sbk_pi = 3.14159265358979323846f;
@@ -16,6 +17,24 @@ unsigned sbk_now;
 unsigned btn_state, btn_pressed, btn_released;
 int sbk_quit;
 int sbk_perf;
+int sbk_demo_on;           // c4: -demo, whose menu has no Accelerated
+
+// c4: the browser's accelerators (c4/accel.mjs, c4/c4accel.h). sbk_accel is
+// the first of the game's numbers, or 0: the game's to draw them. -1 until
+// asked, which the first span does; the main menu's Accelerated sets it,
+// and a save of its own keeps it (main).
+enum { ACCEL_SLOT = SAVE_SLOT(15, 0, 0) };
+int sbk_accel = -1;
+int sbk_accel_on = 1;
+int sbk_accel_base(void) { return sbk_accel = sbk_accel_on ? accel_find("sbk") : 0; }
+int sbk_accel_avail(void) { return accel_find("sbk") != 0; }
+void sbk_accel_set(int on) {
+	int v;
+	sbk_accel_on = on != 0;
+	sbk_accel = sbk_accel_on ? accel_find("sbk") : 0;
+	v = sbk_accel_on;
+	write_save((void *) &v, sizeof(v), ACCEL_SLOT);
+}
 PerfRace perf_race[MAX_TRACKS];
 
 static GameState *state, *next_state;
@@ -125,6 +144,7 @@ enum { DEMO_UPDATES = 4 };
 static unsigned frame_hash(void) {
 	unsigned h;
 	int *p, *end;
+	if (SBK_ACCEL()) return (unsigned) sbk_hash(fb, SCREEN_W * SCREEN_H);   // c4: one instruction
 	h = 2166136261u;
 	p = fb;
 	end = fb + SCREEN_W * SCREEN_H;
@@ -329,8 +349,14 @@ int main(int argc, char **argv) {
 	assets_load();
 	if (demo) {
 		saves_in_memory = 1;
+		sbk_demo_on = 1;
 		sbk_seed(12345);
 		return demo_run(perf, frames, shot_frame, shot_file);
+	}
+	{
+		// c4: Accelerated as it was left
+		int v;
+		if (read_save((void *) &v, sizeof(v), ACCEL_SLOT)) sbk_accel_on = v != 0;
 	}
 	return play(window, stats);
 }

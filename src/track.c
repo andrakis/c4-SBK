@@ -11,6 +11,7 @@
 #include <string.h>
 #include <math.h>
 #include "sbk.h"
+#include "c4accel.h"   // c4: the browser's accelerators
 
 extern float sbk_deg, sbk_inf;
 
@@ -64,6 +65,12 @@ static void span_any(Track *t, int doff, int c, int wx, int wy, int dx, int dy) 
 	w = info->w;
 	pal = t->tiles->pal;
 	sheet = t->tiles->data;
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_any(info->tiles, info->trans, pal, sheet, w, fb + doff, c, wx, wy, dx, dy, scr_alpha);
+		return;
+	}
 	do {
 		wcx = wx >> 16;
 		wcy = wy >> 16;
@@ -127,6 +134,12 @@ static void span_edge(TrackInfo *info, int *row, int *d, int c, int wx, int wy, 
 	world = info->world;
 	wshift = info->wshift;
 	notmask = ~((info->w << 3) - 1);
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_edge(world, wshift, info->w, info->edge_empty, row, d, c, wx, wy, dx, dy);
+		return;
+	}
 	do {
 		x = wx >> 16;
 		y = wy >> 16;
@@ -142,6 +155,12 @@ static void span_edge(TrackInfo *info, int *row, int *d, int c, int wx, int wy, 
 
 // all of it on the map: no pixel needs checking, and d and c needn't change at each
 static void span_pixels(unsigned char *world, int wshift, int *row, int *d, int c, int wx, int wy, int dx, int dy) {
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_pixels(world, wshift, row, d, c, wx, wy, dx, dy);
+		return;
+	}
 	while (c >= 4) {
 		d[0] = row[world[(wx >> 16) + ((wy >> 16) << wshift)]];
 		wx += dx; wy += dy;
@@ -169,6 +188,12 @@ static void span_runs(TrackInfo *info, int *row, int *d, int c, int wx, int wy, 
 	world = info->world;
 	wshift = info->wshift;
 	notmask = ~((info->w << 3) - 1);
+	// c4: in one instruction where the machine has the game's accelerators
+	// (c4/c4accel.h), the same pixels
+	if (SBK_ACCEL()) {
+		sbk_runs(world, wshift, info->w, row, d, c, wx, wy, dx, dy);
+		return;
+	}
 	x = wx >> 16;
 	y = wy >> 16;
 	if (dx > 0) kx = (((x + 1) << 16) - wx + dx - 1) / dx;

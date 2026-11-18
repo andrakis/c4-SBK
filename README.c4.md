@@ -163,6 +163,20 @@ The first version was 8.3 M a frame and 96 K an update. Every step from there ke
 - **The rest.** The minimap is blended a run of one colour at a time, and text goes down
   each column, as the font is held.
 
+**The browser's accelerators** (`c4/accel.mjs`, `c4/c4accel.h`; docs/accel.md in c4).
+Where the machine has them (c4's libjs: the page, `cli.js`), mode 7's scanlines
+(`span_runs`, `span_pixels`, `span_edge`, and `span_any` where a fallen kart shows
+through), the blits and their blends (`pen_span`, `row_blit`, the minimap's
+`scr_blit_tinted`, `scr_stretch` both ways), the text and `-demo`'s frame hash are each
+one instruction, run by the host with exactly the C's results. The demo's 8,158 frames are
+the same, and a frame on node is 0.45 M instructions where it was 4.50 M (median), the
+heaviest 1% 1.1 M where they were 7.3 M. What is left is the minimap's build
+(`mm_build`), mode 7's per-scanline set-up in floats, and the karts' updates. The main
+menu has **Accelerated** (on, off, or none where the machine has none), kept in a save of
+its own; `-demo` leaves it out, so that its recorded buttons and frames are the menu's
+three lines as gcc's build draws them. `c4/acceltest.c` holds each operation to its loop
+(5,097 cases), and `make test-sbk` runs it first.
+
 ## The test
 
 `-demo` plays `c4/demo.c`, a recorded stream of buttons, on a clock of its own with a
