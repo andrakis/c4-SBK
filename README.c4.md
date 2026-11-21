@@ -36,9 +36,10 @@ the art, and the Pages site hasn't been touched.
 
 ## Playing
 
-`sbk` is on the `PATH` in C4IX and on the games disk under C4DOS (`\GAMES\SBK`). It
-takes the display; `sbk -window` plays in the Terminal it was started from. Under
-grin it opens a window of grin's.
+`sbk` is on the `PATH` in C4IX, and in Go > Games > Super Blit Kart, and on the games
+disk under C4DOS (`\GAMES\SBK`). It takes the display; `sbk -window` plays in the
+Terminal it was started from. Under grin, Program Manager's Action Games plays it full
+screen; an item set to run in a window opens a window of grin's.
 
 | key | button | does |
 |---|---|---|
@@ -52,9 +53,9 @@ A race is three laps against seven of the machine's karts. A time trial is three
 laps, against the ghost of your best.
 
 Saves are files in the current directory, one for each slot, named `S<slot>.SAV`;
-`-savetest` tries that where you are. Only C4IX has a disk to write on here. The bare
-machine and C4DOS keep saves in memory, so a ghost or a best time lasts until the
-game ends.
+`-savetest` tries that where you are. Each is also kept in memory until the game ends
+(`src/game.c`). Under C4DOS a save goes to the home drive, B:, or to the RAM disk where
+there is none; on the bare machine, to drive 1. `-demo` keeps its saves in memory only.
 
 ## What is here
 

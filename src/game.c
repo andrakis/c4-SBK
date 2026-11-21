@@ -92,9 +92,10 @@ unsigned sbk_random(void) {
 }
 
 // ---- saves ----
-// Each is kept in memory, for the rest of the game, and written to a file. The bare
-// machine and C4DOS can't write one here, but a ghost still lasts as long as the
-// game does. -demo leaves no trace, so it stops at memory.
+// Each is kept in memory, for the rest of the game, and written to a file: under
+// C4DOS on the home drive, B:, or the RAM disk where there is none, and on the bare
+// machine on drive 1 (libc's bare.c). Where no file can be written, a ghost still
+// lasts as long as the game does. -demo leaves no trace, so it stops at memory.
 
 typedef struct MemSave { int slot, len; char *data; struct MemSave *next; } MemSave;
 static MemSave *mem_saves;
